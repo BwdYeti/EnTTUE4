@@ -7,6 +7,8 @@ public class EnTTUE4 : ModuleRules
 	public EnTTUE4(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+		PrivatePCHHeaderFile = "PCH_EnTTUE4.h";
+		CppStandard = CppStandardVersion.Cpp17;
 		
 		PublicIncludePaths.AddRange(
 			new string[] {
@@ -26,8 +28,6 @@ public class EnTTUE4 : ModuleRules
 			new string[]
 			{
 				"Core",
-				"EnTTUE4Library",
-				"Projects"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -39,6 +39,20 @@ public class EnTTUE4 : ModuleRules
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
+		
+		
+		if (Target.Platform == UnrealTargetPlatform.Win64 || Target.Platform == UnrealTargetPlatform.Win32)
+		{
+			PublicDefinitions.Add("_WINDOWS");
+		}
+		else if (Target.Platform == UnrealTargetPlatform.Mac)
+	        {
+			PublicDefinitions.Add("MACOS");
+		}
+		else if (Target.Platform == UnrealTargetPlatform.Linux || Target.Platform == UnrealTargetPlatform.LinuxAArch64)
+        	{
+			PublicDefinitions.Add("__GNUC__");
+		}
 		
 		
 		DynamicallyLoadedModuleNames.AddRange(
