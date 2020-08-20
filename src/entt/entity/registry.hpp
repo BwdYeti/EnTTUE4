@@ -120,7 +120,9 @@ class basic_registry {
     struct pool_data {
         id_type type_id{};
         std::unique_ptr<sparse_set<Entity>> pool{};
+        void(* assure)(basic_registry &, const sparse_set<Entity> &){};
         void(* remove)(sparse_set<Entity> &, basic_registry &, const Entity){};
+        void(* stamp)(basic_registry &, const Entity, const sparse_set<Entity> &, const Entity){};
     };
 
     template<typename...>
@@ -192,9 +194,11 @@ class basic_registry {
             if(auto &&pdata = pools[index]; !pdata.pool) {
                 pdata.type_id = type_info<Component>::id();
                 pdata.pool.reset(new pool_handler<Component>());
+                pdata.assure = [](basic_registry& other, const sparse_set<Entity>& target) {};
                 pdata.remove = [](sparse_set<entity_type> &target, basic_registry &owner, const entity_type entt) {
                     static_cast<pool_handler<Component> &>(target).remove(owner, entt);
                 };
+                pdata.stamp = [](basic_registry& other, const Entity dst, const sparse_set<Entity>& target, const Entity src) {};
             }
 
             cpool = pools[index].pool.get();
@@ -203,9 +207,11 @@ class basic_registry {
                 cpool = pools.emplace_back(pool_data{
                     type_info<Component>::id(),
                     std::unique_ptr<sparse_set<entity_type>>{new pool_handler<Component>()},
+                    [](basic_registry &other, const sparse_set<Entity> &target) {},
                     [](sparse_set<entity_type> &target, basic_registry &owner, const entity_type entt) {
                         static_cast<pool_handler<Component> &>(target).remove(owner, entt);
-                    }
+                    },
+                    [](basic_registry &other, const Entity dst, const sparse_set<Entity> &target, const Entity src) {}
                 }).pool.get();
             } else {
                 cpool = it->pool.get();
