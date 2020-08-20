@@ -184,6 +184,23 @@ class basic_registry {
     [[nodiscard]] const pool_handler<Component> & assure() const {
         const sparse_set<entity_type> *cpool;
 
+        void (* assure)(basic_registry &, const sparse_set<Entity> &) {};
+        void (* stamp)(basic_registry &, const Entity, const sparse_set<Entity> &, const Entity) {};
+
+        if constexpr(std::is_copy_constructible_v<std::decay_t<Component>>) {
+            assure = [](basic_registry &other, const sparse_set<entity_type> &target) {
+                if constexpr(ENTT_ENABLE_ETO(Component)) {
+                    other.assure<Component>().insert(other, target.begin(), target.end());
+                } else {
+                    other.assure<Component>().insert(other, target.begin(), target.end(), (const Component)(*static_cast<const pool_handler<Component>&>(target).cbegin()));
+                }
+            };
+
+            stamp = [](basic_registry &other, const Entity dst, const sparse_set<Entity> & target, const Entity src) {
+                other.emplace_or_replace<Component>(dst, static_cast<const pool_handler<Component> &>(target).get(src));
+            };
+        }
+
         if constexpr(ENTT_FAST_PATH(has_type_index_v<Component>)) {
             const auto index = type_index<Component>::value();
 
@@ -194,11 +211,11 @@ class basic_registry {
             if(auto &&pdata = pools[index]; !pdata.pool) {
                 pdata.type_id = type_info<Component>::id();
                 pdata.pool.reset(new pool_handler<Component>());
-                pdata.assure = [](basic_registry& other, const sparse_set<Entity>& target) {};
+                pdata.assure = assure;
                 pdata.remove = [](sparse_set<entity_type> &target, basic_registry &owner, const entity_type entt) {
                     static_cast<pool_handler<Component> &>(target).remove(owner, entt);
                 };
-                pdata.stamp = [](basic_registry& other, const Entity dst, const sparse_set<Entity>& target, const Entity src) {};
+                pdata.stamp = stamp;
             }
 
             cpool = pools[index].pool.get();
@@ -207,11 +224,11 @@ class basic_registry {
                 cpool = pools.emplace_back(pool_data{
                     type_info<Component>::id(),
                     std::unique_ptr<sparse_set<entity_type>>{new pool_handler<Component>()},
-                    [](basic_registry &other, const sparse_set<Entity> &target) {},
+                    assure,
                     [](sparse_set<entity_type> &target, basic_registry &owner, const entity_type entt) {
                         static_cast<pool_handler<Component> &>(target).remove(owner, entt);
                     },
-                    [](basic_registry &other, const Entity dst, const sparse_set<Entity> &target, const Entity src) {}
+                    stamp
                 }).pool.get();
             } else {
                 cpool = it->pool.get();
