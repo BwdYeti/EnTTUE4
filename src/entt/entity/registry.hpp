@@ -192,7 +192,7 @@ class basic_registry {
                 if constexpr(ENTT_ENABLE_ETO(Component)) {
                     other.assure<Component>().insert(other, target.begin(), target.end());
                 } else {
-                    other.assure<Component>().insert(other, target.begin(), target.end(), (const Component)(*static_cast<const pool_handler<Component>&>(target).cbegin()));
+                    other.assure<Component>().insert(other, target.begin(), target.end(), static_cast<const pool_handler<Component> &>(target).cbegin());
                 }
             };
 
@@ -1633,7 +1633,7 @@ public:
     [[deprecated("use ::visit and custom (eventually erased) functions instead")]]
     void stamp(const entity_type dst, const basic_registry &other, const entity_type src, exclude_t<Exclude...> = {}) {
         std::for_each(other.pools.cbegin(), other.pools.cend(), [this, dst, src](auto &&pdata) {
-            if(((pdata.type_id != type_info<Exclude>::id()) && ...) && pdata.pool->has(src)) {
+            if(((pdata.type_id != type_info<Exclude>::id()) && ...) && pdata.pool != nullptr && pdata.pool->contains(src)) {
                 ENTT_ASSERT(pdata.stamp);
                 pdata.stamp(*this, dst, *pdata.pool, src);
             }

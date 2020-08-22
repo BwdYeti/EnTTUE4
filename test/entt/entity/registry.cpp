@@ -1320,6 +1320,188 @@ TEST(Registry, NonOwningGroupSortInterleaved) {
     });
 }
 
+TEST(Registry, Clone) {
+    entt::registry registry;
+    entt::registry other;
+
+    registry.destroy(registry.create());
+
+    const auto e0 = registry.create();
+    registry.emplace<int>(e0, 0);
+    registry.emplace<empty_type>(e0);
+
+    const auto e1 = registry.create();
+    registry.emplace<int>(e1, 1);
+    registry.emplace<char>(e1, '1');
+    registry.emplace<empty_type>(e1);
+
+    const auto e2 = registry.create();
+    registry.emplace<int>(e2, 2);
+    registry.emplace<char>(e2, '2');
+
+    registry.destroy(e1);
+
+    ASSERT_EQ((other.group<int, char>().size()), entt::registry::size_type{0});
+
+    other = registry.clone<int, char, float>();
+
+    ASSERT_EQ((other.group<int, char>().size()), entt::registry::size_type{1});
+    ASSERT_EQ(other.size(), registry.size());
+    ASSERT_EQ(other.alive(), registry.alive());
+
+    ASSERT_TRUE(other.valid(e0));
+    ASSERT_FALSE(other.valid(e1));
+    ASSERT_TRUE(other.valid(e2));
+
+    ASSERT_TRUE((other.any<int, empty_type>(e0)));
+    ASSERT_FALSE((other.has<empty_type>(e0)));
+    ASSERT_TRUE((other.has<int, char>(e2)));
+
+    ASSERT_EQ(other.get<int>(e0), 0);
+    ASSERT_EQ(other.get<int>(e2), 2);
+    ASSERT_EQ(other.get<char>(e2), '2');
+
+    const auto e3 = other.create();
+
+    ASSERT_NE(e1, e3);
+    ASSERT_EQ(registry.entity(e1), registry.entity(e3));
+    ASSERT_EQ(other.entity(e1), other.entity(e3));
+
+    other.emplace<int>(e3, 3);
+    other.emplace<char>(e3, '3');
+
+    ASSERT_EQ((registry.group<int, char>().size()), entt::registry::size_type{1});
+    ASSERT_EQ((other.group<int, char>().size()), entt::registry::size_type{2});
+
+    other = registry.clone();
+
+    ASSERT_EQ(other.size(), registry.size());
+    ASSERT_EQ(other.alive(), registry.alive());
+
+    ASSERT_TRUE(other.valid(e0));
+    ASSERT_FALSE(other.valid(e1));
+    ASSERT_TRUE(other.valid(e2));
+    ASSERT_FALSE(other.valid(e3));
+
+    ASSERT_TRUE((other.has<int, empty_type>(e0)));
+    ASSERT_TRUE((other.has<int, char>(e2)));
+
+    ASSERT_EQ(other.get<int>(e0), 0);
+    ASSERT_TRUE(other.has<empty_type>(e0));
+    ASSERT_EQ(other.get<int>(e2), 2);
+    ASSERT_EQ(other.get<char>(e2), '2');
+
+    other = other.clone<char>();
+
+    ASSERT_EQ(other.size(), registry.size());
+    ASSERT_EQ(other.alive(), registry.alive());
+
+    ASSERT_TRUE(other.valid(e0));
+    ASSERT_FALSE(other.valid(e1));
+    ASSERT_TRUE(other.valid(e2));
+    ASSERT_FALSE(other.valid(e3));
+
+    ASSERT_FALSE((other.any<int, empty_type>(e0)));
+    ASSERT_FALSE((other.has<int>(e2)));
+    ASSERT_TRUE((other.has<char>(e2)));
+
+    ASSERT_TRUE(other.orphan(e0));
+    ASSERT_EQ(other.get<char>(e2), '2');
+
+    // the remove erased function must be available after cloning
+    other.clear();
+}
+
+TEST(Registry, CloneExclude) {
+    entt::registry registry;
+    entt::registry other;
+
+    const auto entity = registry.create();
+    registry.emplace<int>(entity);
+    registry.emplace<char>(entity);
+
+    other = registry.clone<int>();
+
+    ASSERT_TRUE(other.has(entity));
+    ASSERT_TRUE(other.has<int>(entity));
+    ASSERT_FALSE(other.has<char>(entity));
+
+    other = registry.clone(entt::exclude<int>);
+
+    ASSERT_TRUE(other.has(entity));
+    ASSERT_FALSE(other.has<int>(entity));
+    ASSERT_TRUE(other.has<char>(entity));
+
+    other = registry.clone(entt::exclude<int, char>);
+
+    ASSERT_TRUE(other.has(entity));
+    ASSERT_TRUE(other.orphan(entity));
+}
+
+TEST(Registry, CloneMoveOnlyComponent) {
+    entt::registry registry;
+    const auto entity = registry.create();
+
+    registry.emplace<std::unique_ptr<int>>(entity);
+    registry.emplace<char>(entity);
+
+    auto other = registry.clone();
+
+    ASSERT_TRUE(other.valid(entity));
+    ASSERT_TRUE(other.has<char>(entity));
+    ASSERT_FALSE(other.has<std::unique_ptr<int>>(entity));
+}
+
+TEST(Registry, Stamp) {
+    entt::registry registry;
+
+    const auto prototype = registry.create();
+    registry.emplace<int>(prototype, 3);
+    registry.emplace<char>(prototype, 'c');
+
+    auto entity = registry.create();
+    registry.stamp(entity, registry, prototype);
+
+    ASSERT_TRUE((registry.has<int, char>(entity)));
+    ASSERT_EQ(registry.get<int>(entity), 3);
+    ASSERT_EQ(registry.get<char>(entity), 'c');
+
+    registry.replace<int>(prototype, 42);
+    registry.replace<char>(prototype, 'a');
+    registry.stamp(entity, registry, prototype);
+
+    ASSERT_EQ(registry.get<int>(entity), 42);
+    ASSERT_EQ(registry.get<char>(entity), 'a');
+}
+
+TEST(Registry, StampExclude) {
+    entt::registry registry;
+
+    const auto prototype = registry.create();
+    registry.emplace<int>(prototype, 3);
+    registry.emplace<char>(prototype, 'c');
+    registry.emplace<empty_type>(prototype);
+
+    const auto entity = registry.create();
+    registry.stamp(entity, registry, prototype, entt::exclude<char>);
+
+    ASSERT_TRUE((registry.has<int, empty_type>(entity)));
+    ASSERT_FALSE(registry.has<char>(entity));
+    ASSERT_EQ(registry.get<int>(entity), 3);
+
+    registry.replace<int>(prototype, 42);
+    registry.stamp(entity, registry, prototype, entt::exclude<int>);
+
+    ASSERT_TRUE((registry.has<int, char, empty_type>(entity)));
+    ASSERT_EQ(registry.get<int>(entity), 3);
+    ASSERT_EQ(registry.get<char>(entity), 'c');
+
+    registry.remove<int, char, empty_type>(entity);
+    registry.stamp(entity, registry, prototype, entt::exclude<int, char, empty_type>);
+
+    ASSERT_TRUE(registry.orphan(entity));
+}
+
 TEST(Registry, GetOrEmplace) {
     entt::registry registry;
     const auto entity = registry.create();
