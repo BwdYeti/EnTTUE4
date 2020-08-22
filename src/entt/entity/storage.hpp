@@ -413,6 +413,25 @@ public:
     }
 
     /**
+     * @brief Assigns one or more entities to a storage and constructs their
+     * objects from a given range.
+     *
+     * @sa construct
+     *
+     * @tparam EIt Type of input iterator.
+     * @tparam CIt Type of input iterator.
+     * @param first An iterator to the first element of the range of entities.
+     * @param last An iterator past the last element of the range of entities.
+     * @param from An iterator to the first element of the range of objects.
+     */
+    template<typename EIt, typename CIt>
+    void insert(EIt first, EIt last, CIt from) {
+        instances.insert(instances.end(), from, from + std::distance(first, last));
+        // entities go after components in case constructors throw
+        underlying_type::insert(first, last);
+    }
+
+    /**
      * @brief Removes an entity from a storage and destroys its object.
      *
      * @warning

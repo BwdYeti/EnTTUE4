@@ -192,7 +192,7 @@ class basic_registry {
                 if constexpr(ENTT_ENABLE_ETO(Component)) {
                     other.assure<Component>().insert(other, target.begin(), target.end());
                 } else {
-                    other.assure<Component>().insert(other, target.begin(), target.end(), (const Component)(*static_cast<const pool_handler<Component>&>(target).cbegin()));
+                    other.assure<Component>().insert(other, target.begin(), target.end(), static_cast<const pool_handler<Component> &>(target).cbegin());
                 }
             };
 
