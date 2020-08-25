@@ -111,6 +111,56 @@ class basic_registry {
             return patch(owner, entt, [&component](auto &&curr) { curr = std::move(component); });
         }
 
+        int checksum(int (*checksumFunction)(void*, size_t)) const
+        {
+            int result = 0;
+
+            // Cast to the set of entities to get those first
+            auto entitySet = static_cast<const sparse_set<Entity>*>(this);
+            // If there are no entities, just return 0
+            if (entitySet->empty())
+                return result;
+
+            // Get the entities in order
+            std::vector<Entity> sortedEntities;
+            std::for_each(entitySet->begin(), entitySet->end(), [&sortedEntities](auto&& entity)
+                {
+                    sortedEntities.push_back(entity);
+                });
+            // Sort the entities
+            std::sort(sortedEntities.begin(), sortedEntities.end(), [](Entity lhs, Entity rhs) {
+                return lhs < rhs; });
+
+            // Checksum the entities
+            result ^= checksumFunction((void*)&sortedEntities[0], sortedEntities.size() * sizeof(Entity));
+
+            // If Component is not an empty type
+            if constexpr (!ENTT_IS_EMPTY(Component))
+            {
+                // Create a buffer to copy the components into
+                void* bufStart = calloc(sortedEntities.size(), sizeof(Component));
+                void* buf = bufStart;
+                // Loop through the entities
+                std::for_each(sortedEntities.cbegin(), sortedEntities.cend(), [&buf, this](auto&& entity)
+                    {
+                        // Copy each component into the buffer
+                        Component component = get(entity);
+                        memcpy(buf, &component, sizeof(Component));
+                        buf = static_cast<char*>(buf) + sizeof(Component);
+                    });
+                // Checksum the components
+                result ^= checksumFunction(bufStart, sortedEntities.size() * sizeof(Component));
+                // Free the buffer
+                free(bufStart);
+            }
+            else
+            {
+                return result;
+            }
+
+            return result;
+        }
+
     private:
         sigh<void(basic_registry &, const Entity)> construction{};
         sigh<void(basic_registry &, const Entity)> destruction{};
@@ -123,6 +173,7 @@ class basic_registry {
         void(* assure)(basic_registry &, const sparse_set<Entity> &){};
         void(* remove)(sparse_set<Entity> &, basic_registry &, const Entity){};
         void(* stamp)(basic_registry &, const Entity, const sparse_set<Entity> &, const Entity){};
+        int(* checksum)(int (*)(void*, size_t), const sparse_set<Entity>&){};
     };
 
     template<typename...>
@@ -187,6 +238,13 @@ class basic_registry {
         void (* assure)(basic_registry &, const sparse_set<Entity> &) {};
         void (* stamp)(basic_registry &, const Entity, const sparse_set<Entity> &, const Entity) {};
 
+        auto remove = [](sparse_set<entity_type>& target, basic_registry& owner, const entity_type entt) {
+            static_cast<pool_handler<Component>&>(target).remove(owner, entt);
+        };
+        auto checksum = [](int (*checksumFunction)(void*, size_t), const sparse_set<entity_type> &target) {
+            return static_cast<const pool_handler<Component> &>(target).checksum(checksumFunction);
+        };
+
         if constexpr(std::is_copy_constructible_v<std::decay_t<Component>>) {
             assure = [](basic_registry &other, const sparse_set<entity_type> &target) {
                 if constexpr(ENTT_ENABLE_ETO(Component)) {
@@ -212,10 +270,9 @@ class basic_registry {
                 pdata.type_id = type_info<Component>::id();
                 pdata.pool.reset(new pool_handler<Component>());
                 pdata.assure = assure;
-                pdata.remove = [](sparse_set<entity_type> &target, basic_registry &owner, const entity_type entt) {
-                    static_cast<pool_handler<Component> &>(target).remove(owner, entt);
-                };
+                pdata.remove = remove;
                 pdata.stamp = stamp;
+                pdata.checksum = checksum;
             }
 
             cpool = pools[index].pool.get();
@@ -225,10 +282,9 @@ class basic_registry {
                     type_info<Component>::id(),
                     std::unique_ptr<sparse_set<entity_type>>{new pool_handler<Component>()},
                     assure,
-                    [](sparse_set<entity_type> &target, basic_registry &owner, const entity_type entt) {
-                        static_cast<pool_handler<Component> &>(target).remove(owner, entt);
-                    },
-                    stamp
+                    remove,
+                    stamp,
+                    checksum
                 }).pool.get();
             } else {
                 cpool = it->pool.get();
@@ -1638,6 +1694,48 @@ public:
                 pdata.stamp(*this, dst, *pdata.pool, src);
             }
         });
+    }
+
+    /**
+     * @brief Gets the checksum of the registry, using the passed checksum function.
+     */
+    int checksum(int (*checksumFunction)(void*, size_t)) const {
+        basic_registry other;
+
+        int result = 0;
+
+        // Checksum the entities
+        result ^= checksumFunction((void*)&entities[0], sizeof(entity_type) * entities.size());
+
+        // Checksum destroyed
+        result ^= checksumFunction((void*)&destroyed, sizeof(entity_type));
+
+        // Checksum the components
+        // Get pointers to each valid pool
+        std::vector<const pool_data*> sortedPools;
+        std::for_each(pools.cbegin(), pools.cend(), [&sortedPools](auto&& pdata)
+            {
+                if (pdata.pool != nullptr)
+                {
+                    sortedPools.push_back(static_cast<const pool_data*>(&pdata));
+                }
+            });
+        // Sort the components so they are used in a consistent order
+        std::sort(sortedPools.begin(), sortedPools.end(), [](const pool_data* lhs, const pool_data* rhs) {
+            return lhs->type_id < rhs->type_id; });
+        // Loop the sorted pools and pass the checksum function to them
+        std::vector<id_type> componentIds;
+        std::for_each(sortedPools.cbegin(), sortedPools.cend(), [&result, &componentIds, checksumFunction](const pool_data* pdata)
+            {
+                ENTT_ASSERT(pdata->checksum);
+                // Get the checksum of this pool
+                result ^= pdata->checksum(checksumFunction, *(pdata->pool));
+                componentIds.push_back(pdata->type_id);
+            });
+        // Checksum the ids of the components
+        result ^= checksumFunction((void*)&componentIds[0], componentIds.size() * sizeof(id_type));
+
+        return result;
     }
 
     /**
