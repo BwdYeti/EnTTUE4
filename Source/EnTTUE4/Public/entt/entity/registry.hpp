@@ -1641,26 +1641,38 @@ public:
      */
     template<typename... Component, typename... Exclude>
     [[deprecated("use ::visit and custom (eventually erased) functions instead")]]
-    basic_registry clone(exclude_t<Exclude...> = {}) const {
+    basic_registry clone(exclude_t<Exclude...> exclude = {}) const {
         basic_registry other;
 
-        other.destroyed = destroyed;
-        other.entities = entities;
-
-        std::for_each(pools.cbegin(), pools.cend(), [&other](auto &&pdata) {
-            if constexpr(sizeof...(Component) == 0) {
-                if(pdata.assure && ((pdata.type_id != type_info<Exclude>::id()) && ...)) {
-                    pdata.assure(other, *pdata.pool);
-                }
-            } else {
-                static_assert(sizeof...(Exclude) == 0 && std::conjunction_v<std::is_copy_constructible<Component>...>);
-                if(pdata.assure && ((pdata.type_id == type_info<Component>::id()) || ...)) {
-                    pdata.assure(other, *pdata.pool);
-                }
-            }
-        });
+        clone_to(&other, exclude);
 
         return other;
+    }
+
+    template<typename... Component, typename... Exclude>
+    [[deprecated("use ::visit and custom (eventually erased) functions instead")]]
+    void clone_to(basic_registry* other, exclude_t<Exclude...> = {}) const {
+        other->groups = std::vector<group_data>();
+        other->vars = std::vector<variable_data>();
+
+        other->destroyed = destroyed;
+        other->entities = entities;
+
+        other->pools = std::vector<pool_data>();
+
+        std::for_each(pools.cbegin(), pools.cend(), [other](auto&& pdata) {
+            if constexpr (sizeof...(Component) == 0) {
+                if (pdata.assure && ((pdata.type_id != type_info<Exclude>::id()) && ...)) {
+                    pdata.assure(*other, *pdata.pool);
+                }
+            }
+            else {
+                static_assert(sizeof...(Exclude) == 0 && std::conjunction_v<std::is_copy_constructible<Component>...>);
+                if (pdata.assure && ((pdata.type_id == type_info<Component>::id()) || ...)) {
+                    pdata.assure(*other, *pdata.pool);
+                }
+            }
+            });
     }
 
     /**
