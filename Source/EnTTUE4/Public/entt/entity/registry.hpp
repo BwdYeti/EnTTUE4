@@ -24,6 +24,7 @@
 #include "storage.hpp"
 #include "utility.hpp"
 #include "view.hpp"
+#include "Checksumable.h"
 
 
 namespace entt {
@@ -137,21 +138,39 @@ class basic_registry {
             // If Component is not an empty type
             if constexpr (!ENTT_IS_EMPTY(Component))
             {
-                // Create a buffer to copy the components into
-                void* bufStart = calloc(sortedEntities.size(), sizeof(Component));
-                void* buf = bufStart;
-                // Loop through the entities
-                std::for_each(sortedEntities.cbegin(), sortedEntities.cend(), [&buf, this](auto&& entity)
-                    {
-                        // Copy each component into the buffer
-                        Component component = get(entity);
-                        memcpy(buf, &component, sizeof(Component));
-                        buf = static_cast<char*>(buf) + sizeof(Component);
-                    });
-                // Checksum the components
-                result ^= checksumFunction(bufStart, sortedEntities.size() * sizeof(Component));
-                // Free the buffer
-                free(bufStart);
+                // If this Component type handles checksums itself
+                if constexpr (std::is_base_of<IChecksumable, Component>::value)
+                {
+                    int componentResult = 0;
+                    // Loop through the entities
+                    std::for_each(sortedEntities.cbegin(), sortedEntities.cend(), [&componentResult, &checksumFunction, this](auto&& entity)
+                        {
+                            // Pass checksum function to each component
+                            Component component = get(entity);
+                            componentResult ^= component.GetChecksum(checksumFunction);
+                            // Mangle the result bits with itself a bit
+                            componentResult ^= componentResult >> 13;
+                        });
+                    result ^= componentResult;
+                }
+                else
+                {
+                    // Create a buffer to copy the components into
+                    void* bufStart = calloc(sortedEntities.size(), sizeof(Component));
+                    void* buf = bufStart;
+                    // Loop through the entities
+                    std::for_each(sortedEntities.cbegin(), sortedEntities.cend(), [&buf, this](auto&& entity)
+                        {
+                            // Copy each component into the buffer
+                            Component component = get(entity);
+                            memcpy(buf, &component, sizeof(Component));
+                            buf = static_cast<char*>(buf) + sizeof(Component);
+                        });
+                    // Checksum the components
+                    result ^= checksumFunction(bufStart, sortedEntities.size() * sizeof(Component));
+                    // Free the buffer
+                    free(bufStart);
+                }
             }
             else
             {
