@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 5,
-	"VersionName": "3.4.0.4",
+	"Version": 6,
+	"VersionName": "3.4.0.5",
 	"FriendlyName": "EnTTUE4",
 	"Description": "A port of the EnTT entity-component-system library for UE4.",
 	"Category": "Other",
