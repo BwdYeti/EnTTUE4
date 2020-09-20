@@ -155,19 +155,21 @@ class basic_registry {
                 }
                 else
                 {
+                    constexpr size_t componentSize = sizeof(Component);
+                    const size_t bufferSize = sortedEntities.size() * componentSize;
                     // Create a buffer to copy the components into
-                    void* bufStart = calloc(sortedEntities.size(), sizeof(Component));
+                    void* bufStart = calloc(sortedEntities.size(), componentSize);
                     void* buf = bufStart;
                     // Loop through the entities
-                    std::for_each(sortedEntities.cbegin(), sortedEntities.cend(), [&buf, this](auto&& entity)
+                    std::for_each(sortedEntities.cbegin(), sortedEntities.cend(), [&buf, this, componentSize](auto&& entity)
                         {
                             // Copy each component into the buffer
                             Component component = get(entity);
-                            memcpy(buf, &component, sizeof(Component));
-                            buf = static_cast<char*>(buf) + sizeof(Component);
+                            memcpy(buf, &component, componentSize);
+                            buf = static_cast<char*>(buf) + componentSize;
                         });
                     // Checksum the components
-                    result ^= checksumFunction(bufStart, sortedEntities.size() * sizeof(Component));
+                    result ^= checksumFunction(bufStart, bufferSize);
                     // Free the buffer
                     free(bufStart);
                 }
