@@ -5,7 +5,7 @@
 class IChecksumable
 {
 public:
-	// Empty virtual destrouctor for proper cleanup
+	// Empty virtual destructor for proper cleanup
 	virtual ~IChecksumable() {}
 
 	virtual int GetChecksum(int (*checksumFunction)(void*, size_t)) const = 0;
